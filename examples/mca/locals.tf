@@ -1,6 +1,6 @@
 locals {
-  invoice_section_name = "${var.level_5_org_code}-${lower(replace(var.application_name, " ", "-"))}"
-  invoice_section_display_name = "${var.level_5_org_code} - ${var.application_name}"
+  invoice_section_name = "${var.org_code}-${lower(replace(var.application_name, " ", "-"))}"
+  invoice_section_display_name = "${var.org_code} - ${var.application_name}"
   invoice_section_uri = "/providers/Microsoft.Billing/billingAccounts/${var.billing_account_id}/billingProfiles/${var.billing_profile_id}/invoiceSections/${local.invoice_section_name}"
    environments = [
     "test",
