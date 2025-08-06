@@ -10,7 +10,7 @@ module "ip_calc" {
 }
 
 resource "azapi_resource" "invoice_section" {
-  type      = "Microsoft.Billing/invoiceSections@2024-04-01"
+  type      = "Microsoft.Billing/billingAccounts/billingProfiles/invoiceSections@2024-04-01"
   name      = local.invoice_section_name
   parent_id = "/providers/Microsoft.Billing/billingAccounts/${var.billing_account_id}/billingProfiles/${var.billing_profile_id}"
   location  = "global"
