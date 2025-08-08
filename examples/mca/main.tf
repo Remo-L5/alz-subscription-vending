@@ -10,7 +10,7 @@ module "ip_calc" {
 }
 
 resource "azapi_resource" "invoice_section" {
-  type      = "Microsoft.Billing/invoiceSections@2024-04-01"
+  type      = "Microsoft.Billing/billingAccounts/invoiceSections@2024-04-01"
   name      = local.invoice_section_name
   parent_id = "/providers/Microsoft.Billing/billingAccounts/${var.billing_account_id}/billingProfiles/${var.billing_profile_id}"
   location  = "global"
@@ -207,15 +207,15 @@ module "lz_vending" {
         }
       }
       hub_peering_options_tohub = {
-        allow_forwarded_traffic       = true
+        allow_forwarded_traffic       = false
         allow_gateway_transit         = false
         allow_virtual_network_access  = true
         peer_complete_vnets           = true
-        use_remote_gateways           = false
+        use_remote_gateways           = true
       }
       hub_peering_options_fromhub = {
         allow_forwarded_traffic       = true
-        allow_gateway_transit         = false
+        allow_gateway_transit         = true
         allow_virtual_network_access  = true
         peer_complete_vnets           = true
         use_remote_gateways           = false
