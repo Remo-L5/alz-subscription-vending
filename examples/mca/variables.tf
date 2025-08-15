@@ -35,7 +35,22 @@ variable "subscription_owner_object_id" {
 }
 
 variable "subscription_resource_providers" {
-  description = "The resource providers for the subscription."
-  type        = string
-  default     = "Microsoft.Network,Microsoft.Compute,Microsoft.Storage,Microsoft.KeyVault,Microsoft.AzureTerraform"
+  description = "The resource providers and their features to enable for the subscription. Map where keys are provider names and values are sets of features to enable."
+  type        = map(set(string))
+  default     = {
+    "Microsoft.Network" = [
+      "AllowVnetGatewayOpenVpnProtocol",
+      "AllowApplicationGatewayPrivateLink"
+    ]
+    "Microsoft.Compute" = [
+      "HibernationVMPreview",
+      "EncryptionAtHost"
+    ]
+    "Microsoft.Storage" = [
+      "AllowRequireInfraStructureEncryption",
+      "AllowCrossTenantReplication"
+    ]
+    "Microsoft.KeyVault" = []
+    "Microsoft.AzureTerraform" = []
+  }
 }

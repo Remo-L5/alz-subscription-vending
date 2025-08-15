@@ -40,7 +40,7 @@ module "lz_vending" {
   subscription_workload      = "Production"
 
   subscription_register_resource_providers_enabled = true
-  subscription_register_resource_providers_and_features = local.subscription_resource_providers
+  subscription_register_resource_providers_and_features = var.subscription_resource_providers
 
   # management group association variables
   subscription_management_group_association_enabled = true
