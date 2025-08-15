@@ -1,4 +1,9 @@
-variable "spoke_vnet_address_space" {
+variable "spoke_vnet_address_space_test" {
+    description = "CIDR notation for the spoke vnet address space."
+    type        = string
+}
+
+variable "spoke_vnet_address_space_prod" {
     description = "CIDR notation for the spoke vnet address space."
     type        = string
 }

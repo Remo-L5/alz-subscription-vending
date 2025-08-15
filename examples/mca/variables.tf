@@ -33,3 +33,9 @@ variable "subscription_owner_object_id" {
     description = "The Object ID of the staff member owning the subscription."
     type        = string
 }
+
+variable "subscription_resource_providers" {
+  description = "The resource providers for the subscription."
+  type        = string
+  default     = "Microsoft.Network,Microsoft.Compute,Microsoft.Storage,Microsoft.KeyVault,Microsoft.AzureTerraform"
+}

@@ -6,6 +6,12 @@ locals {
     "test",
     "prod"
   ]
+  address_spaces_required = {
+    "test" = var.spoke_vnet_address_space_test
+    "prod" = var.spoke_vnet_address_space_prod
+  }
+  subscription_resource_providers = { for provider in split(",", var.subscription_resource_providers) : provider => [] }
+  
   subscriptions_to_provision = {
     for env in local.environments : "${var.application_short_name}_${env}" => {
       component_name = "${var.application_short_name}-${env}-${var.location}"
