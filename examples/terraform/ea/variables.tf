@@ -10,20 +10,37 @@ variable "application_short_name" {
 
 variable "environments" {
   description = "List of environments."
-  type        = map(string)
+  type = map(map(object({
+    address_space = string
+  })))
   default = {
-    "test" = "10.0.0.0/24"
-    "prod" = "10.0.1.0/24"
+    "test" = {
+      eastus = {
+        address_space = "10.0.2.0/24"
+      }
+      westus = {
+        address_space = "10.0.3.0/24"
+      }
+    }
+    "prod" = {
+      eastus = {
+        address_space = "10.0.4.0/24"
+      }
+      westus = {
+        address_space = "10.0.5.0/24"
+      }
+    }
   }
 }
 
-variable "location" {
+
+variable "primary_location" {
   description = "The location name."
   type        = string
-  default     = "westus2"
+  default     = "eastus"
   validation {
-    condition     = contains(["westus2", "westus3"], var.location)
-    error_message = "The location name must be either 'westus2' or 'westus3'."
+    condition     = contains(["eastus", "westus"], var.location)
+    error_message = "The location name must be either 'eastus' or 'westus'."
   }
 }
 
@@ -31,6 +48,13 @@ variable "management_group_name" {
   description = "The name of the Management Group."
   type        = string
   default     = "alz-landingzones"
+}
+
+variable "resource_groups_additional" {
+  type = map(object({
+    suffix = string
+  }))
+  default = {}
 }
 
 variable "subscription_resource_providers" {

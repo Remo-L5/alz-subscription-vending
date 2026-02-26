@@ -2,18 +2,18 @@ module "ip_calc" {
   source  = "Azure/avm-utl-network-ip-addresses/azurerm"
   version = "0.1.0"
 
-  for_each         = local.subscriptions_to_provision
+  for_each         = local.virtual_network_config_by_location
   address_space    = each.value.virtual_network_address_space
   address_prefixes = each.value.subnet_cidr_blocks
 }
 
 module "lz_vending" {
-  source     = "Azure/lz-vending/azurerm"
-  version    = "6.0.0" # change this to your desired version, https://www.terraform.io/language/expressions/version-constraints
+  source  = "Azure/avm-ptn-alz-sub-vending/azure"
+  version = "0.1.1"
   # Set the default location for resources
   for_each = local.subscriptions_to_provision
 
-  location = var.location
+  location = var.primary_location
 
   # subscription variables
   subscription_update_existing = false
@@ -33,16 +33,7 @@ module "lz_vending" {
   subscription_tags = each.value.tags
 
   resource_group_creation_enabled = true
-  resource_groups = {
-    vnetrg = {
-      name     = "vnetrg"
-      location = var.location
-    }
-    mainrg = {
-      name     = "mainrg"
-      location = var.location
-    }
-  }
+  resource_groups = each.value.resource_groups_to_provision
 
   # role assignments TODO
   role_assignment_enabled = true
@@ -80,95 +71,18 @@ module "lz_vending" {
 
   # umi variables
   umi_enabled = true
-  user_managed_identities = {
-    app = {
-      name                            = "umi-${each.value.component_name}-app-01"
-      location                        = var.location
-      resource_group_key              = "mainrg"
-      tags                            = each.value.tags
-    }
-  }
+  user_managed_identities = local.default_user_managed_identities[each.key]
 
   # route table variables
   route_table_enabled = var.virtual_network_enabled && var.hub_peering_enabled
-  route_tables = {
-    HubNetwork = {
-      name                          = "rt-${each.value.component_name}-01"
-      location                      = var.location
-      resource_group_key           = "vnetrg"
-      bgp_route_propagation_enabled = false
-      routes = {
-        FirewallDefaultRoute = {
-          name                   = "${var.application_short_name}-to-firewall"
-          address_prefix         = "0.0.0.0/0"
-          next_hop_type          = "VirtualAppliance"
-          next_hop_in_ip_address = local.location_config[var.location].hub_network_fw_ip
-        }
-      }
-    }
-  }
+  route_tables = local.default_route_tables[each.key]
 
   # network security group variables
   network_security_group_enabled = var.virtual_network_enabled
-  network_security_groups = {
-    default = {
-      name                = "nsg-${each.value.component_name}-01"
-      location            = var.location
-      resource_group_key  = "vnetrg"
-      security_rules = {
-        allow_outbound = {
-          name                         = "allow-spoke-outbound"
-          priority                     = 100
-          direction                    = "Outbound"
-          access                       = "Allow"
-          protocol                     = "Tcp"
-          source_port_range            = "*"
-          destination_port_range       = "*"
-          source_address_prefixes      = [each.value.virtual_network_address_space]
-          destination_address_prefixes = [local.location_config[var.location].hub_network_address_prefix]
-          description                  = "Allow spoke outbound traffic to FW"
-        }
-        allow_inbound = {
-          name                         = "allow-spoke-inbound"
-          priority                     = 100
-          direction                    = "Inbound"
-          access                       = "Allow"
-          protocol                     = "Tcp"
-          source_port_range            = "*"
-          destination_port_range       = "*"
-          source_address_prefixes      = [local.location_config[var.location].hub_network_address_prefix]
-          destination_address_prefixes = [each.value.virtual_network_address_space]
-          description                  = "Allow spoke inbound traffic to FW"
-        }
-      }
-    }
-  }
+  network_security_groups = local.default_network_security_groups[each.key]
 
   # virtual network variables
   virtual_network_enabled = var.virtual_network_enabled
-  virtual_networks = {
-    primary = {
-      name                            = "vnet-${each.value.component_name}-01"
-      address_space                   = [each.value.address_space]
-      resource_group_key              = "vnetrg"
-      hub_peering_enabled             = var.hub_peering_enabled
-      hub_network_resource_id         = local.location_config[var.location].hub_network_resource_id
-      hub_peering_direction           = "both"
-      subnets                         = local.environment_subnets[each.key]
-      hub_peering_options_tohub = {
-        allow_forwarded_traffic      = false
-        allow_gateway_transit        = false
-        allow_virtual_network_access = true
-        peer_complete_vnets          = true
-        use_remote_gateways          = true
-      }
-      hub_peering_options_fromhub = {
-        allow_forwarded_traffic      = true
-        allow_gateway_transit        = true
-        allow_virtual_network_access = true
-        peer_complete_vnets          = true
-        use_remote_gateways          = false
-      }
-    }
-  }
+  virtual_networks = local.default_virtual_networks[each.key]
+
 }
