@@ -16,18 +16,15 @@ locals {
     }
   }
 
-  environment_short_names = {
-    "test" : "test",
-    "dev" : "dev",
-    "prod" : "prd"
-  }
-
   default_resource_groups_types = {
     vnetrg = {
       type = "network"
     }
     mainrg = {
       type = "application"
+    }
+    identityrg = {
+      type = "identity"
     }
   }
 
@@ -73,39 +70,41 @@ locals {
   }
 
   default_network_security_groups = {
-    for env, location in var.environments : env => {
-      for location_key, location_value in location : "hub-${location_key}" => {
-        name               = "nsg-${var.application_short_name}-${env}-${location_key}-01"
-        location           = location_key
-        resource_group_key = "${env}-${location_key}-vnetrg"
-        security_rules = {
-          allow_outbound = {
-            name                         = "allow-${location_key}-spoke-outbound"
-            priority                     = 100
-            direction                    = "Outbound"
-            access                       = "Allow"
-            protocol                     = "Tcp"
-            source_port_range            = "*"
-            destination_port_range       = "*"
-            source_address_prefixes      = [location_value.address_space]
-            destination_address_prefixes = local.location_config[location_key].hub_network_address_prefixes
-            description                  = "Allow spoke outbound traffic to hub"
+    for env, location in var.environments : env => merge([
+      for location_key, location_value in location : {
+        for subnet_key, subnet_config in var.virtual_network_subnets : "nsg-${location_key}-${subnet_key}" => {
+          name               = "nsg-${var.application_short_name}-${env}-${location_key}-${subnet_key}"
+          location           = location_key
+          resource_group_key = "${env}-${location_key}-vnetrg"
+          security_rules = {
+            allow_outbound = {
+              name                         = "allow-${location_key}-${subnet_key}-spoke-outbound"
+              priority                     = 100
+              direction                    = "Outbound"
+              access                       = "Allow"
+              protocol                     = "Tcp"
+              source_port_range            = "*"
+              destination_port_range       = "*"
+              source_address_prefixes      = [module.ip_calc["${env}-${location_key}"].address_prefixes[subnet_key]]
+              destination_address_prefixes = local.location_config[location_key].hub_network_address_prefixes
+              description                  = "Allow spoke outbound traffic to hub"
+            }
+            allow_inbound = {
+              name                         = "allow-${location_key}-${subnet_key}-spoke-inbound"
+              priority                     = 100
+              direction                    = "Inbound"
+              access                       = "Allow"
+              protocol                     = "Tcp"
+              source_port_range            = "*"
+              destination_port_range       = "*"
+              source_address_prefixes      = local.location_config[location_key].hub_network_address_prefixes
+              destination_address_prefixes = [module.ip_calc["${env}-${location_key}"].address_prefixes[subnet_key]]
+              description                  = "Allow spoke inbound traffic from hub"
+            }
           }
-          allow_inbound = {
-            name                         = "allow-${location_key}-spoke-inbound"
-            priority                     = 100
-            direction                    = "Inbound"
-            access                       = "Allow"
-            protocol                     = "Tcp"
-            source_port_range            = "*"
-            destination_port_range       = "*"
-            source_address_prefixes      = local.location_config[location_key].hub_network_address_prefixes
-            destination_address_prefixes = [location_value.address_space]
-            description                  = "Allow spoke inbound traffic from hub"
-          }
-        }
+        } if subnet_config.enabled
       }
-    }
+    ]...)
   }
 
   default_virtual_networks = {
@@ -184,7 +183,7 @@ locals {
             key_reference = "hub-${location_key}"
           } : null
           network_security_group = {
-            key_reference = "hub-${location_key}"
+            key_reference = "nsg-${location_key}-${subnet_key}"
           }
         }
       }
