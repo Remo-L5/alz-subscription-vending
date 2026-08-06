@@ -9,7 +9,7 @@ module "ip_calc" {
 
 module "lz_vending" {
   source  = "Azure/avm-ptn-alz-sub-vending/azure"
-  version = "0.1.1"
+  version = "0.3.0"
   # Set the default location for resources
   for_each = local.subscriptions_to_provision
 
@@ -17,7 +17,7 @@ module "lz_vending" {
 
   # subscription variables
   subscription_update_existing = false
-  subscription_alias_enabled   = false
+  subscription_alias_enabled   = true
   subscription_billing_scope   = "/providers/Microsoft.Billing/billingAccounts/${var.billing_account_id}/billingProfiles/${var.billing_profile_id}"
   subscription_display_name    = "${upper(var.application_name)}-${upper(each.value.environment)}"
   subscription_alias_name      = "${lower(var.application_short_name)}-${lower(each.value.environment)}"
@@ -85,4 +85,19 @@ module "lz_vending" {
   virtual_network_enabled = var.virtual_network_enabled
   virtual_networks = local.default_virtual_networks[each.key]
 
+}
+
+resource "azapi_resource" "hub_route_update" {
+  for_each  = var.hub_peering_enabled && var.virtual_network_enabled ? local.hub_route_configs : {}
+  type      = "Microsoft.Network/routeTables/routes@2024-05-01"
+  name      = "udr-inf-hub-${var.application_short_name}-${each.value.environment}-${each.value.address_space_key}"
+  parent_id = "/subscriptions/${var.connectivity_subscription_id}/resourceGroups/rg-hub-${each.value.location}-1/providers/Microsoft.Network/routeTables/rt-hub-gw-${each.value.location}"
+
+  body = {
+    properties = {
+      addressPrefix    = each.value.address_prefix,
+      nextHopType      = "VirtualAppliance"
+      nextHopIpAddress = local.location_config[each.value.location].hub_network_fw_ip
+    }
+  }
 }

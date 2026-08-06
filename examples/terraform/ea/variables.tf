@@ -11,23 +11,39 @@ variable "application_short_name" {
 variable "environments" {
   description = "List of environments."
   type = map(map(object({
-    address_space = string
+    address_space = map(string)
   })))
+  validation {
+    condition = alltrue([
+      for env, locs in var.environments : alltrue([
+        for loc, cfg in locs : length(cfg.address_space) > 0
+      ])
+    ])
+    error_message = "Each environment/location must define at least one address_space entry."
+  }
   default = {
     "test" = {
       eastus = {
-        address_space = "10.0.2.0/24"
+        address_space = {
+          primary = "10.0.2.0/24"
+        }
       }
       westus = {
-        address_space = "10.0.3.0/24"
+        address_space = {
+          primary = "10.0.3.0/24"
+        }
       }
     }
     "prod" = {
       eastus = {
-        address_space = "10.0.4.0/24"
+        address_space = {
+          primary = "10.0.4.0/24"
+        }
       }
       westus = {
-        address_space = "10.0.5.0/24"
+        address_space = {
+          primary = "10.0.5.0/24"
+        }
       }
     }
   }
@@ -39,7 +55,7 @@ variable "primary_location" {
   type        = string
   default     = "eastus"
   validation {
-    condition     = contains(["eastus", "westus"], var.location)
+    condition     = contains(["eastus", "westus"], var.primary_location)
     error_message = "The location name must be either 'eastus' or 'westus'."
   }
 }

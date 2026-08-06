@@ -9,6 +9,10 @@ terraform {
       source  = "Azure/azapi"
       version = "~> 2.2"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
   backend "azurerm" {
     use_azuread_auth = true

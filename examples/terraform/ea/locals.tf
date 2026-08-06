@@ -72,7 +72,7 @@ locals {
   default_network_security_groups = {
     for env, location in var.environments : env => merge([
       for location_key, location_value in location : {
-        for subnet_key, subnet_config in var.virtual_network_subnets : "nsg-${location_key}-${subnet_key}" => {
+        for subnet_key, subnet_config in local.subnets_resolved[env][location_key] : "nsg-${location_key}-${subnet_key}" => {
           name               = "nsg-${var.application_short_name}-${env}-${location_key}-${subnet_key}"
           location           = location_key
           resource_group_key = "${env}-${location_key}-vnetrg"
@@ -85,8 +85,8 @@ locals {
               protocol                     = "Tcp"
               source_port_range            = "*"
               destination_port_range       = "*"
-              source_address_prefixes      = [module.ip_calc["${env}-${location_key}"].address_prefixes[subnet_key]]
-              destination_address_prefixes = local.location_config[location_key].hub_network_address_prefixes
+              source_address_prefixes      = [module.ip_calc["${env}-${location_key}-${subnet_config.address_space_key}"].address_prefixes[subnet_key]]
+              destination_address_prefixes = [local.location_config[location_key].hub_network_address_prefix]
               description                  = "Allow spoke outbound traffic to hub"
             }
             allow_inbound = {
@@ -97,12 +97,12 @@ locals {
               protocol                     = "Tcp"
               source_port_range            = "*"
               destination_port_range       = "*"
-              source_address_prefixes      = local.location_config[location_key].hub_network_address_prefixes
-              destination_address_prefixes = [module.ip_calc["${env}-${location_key}"].address_prefixes[subnet_key]]
+              source_address_prefixes      = [local.location_config[location_key].hub_network_address_prefix]
+              destination_address_prefixes = [module.ip_calc["${env}-${location_key}-${subnet_config.address_space_key}"].address_prefixes[subnet_key]]
               description                  = "Allow spoke inbound traffic from hub"
             }
           }
-        } if subnet_config.enabled
+        } if try(subnet_config.enabled, true)
       }
     ]...)
   }
@@ -112,12 +112,12 @@ locals {
       for location_key, location_value in location : location_key => {
         name                    = "vnet-${var.application_short_name}-${env}-${location_key}-01"
         location                = location_key
-        address_space           = [location_value.address_space]
+        address_space           = values(location_value.address_space)
         dns_servers             = local.location_config[location_key].dns_servers
         ddos_protection_enabled = false
         ddos_protection_plan_id = null
         resource_group_key      = "${env}-${location_key}-vnetrg"
-        hub_peering_enabled     = var.peer_spoke_to_hub
+        hub_peering_enabled     = var.hub_peering_enabled
         hub_network_resource_id = local.location_config[location_key].hub_network_resource_id
         hub_peering_direction   = "both"
         hub_peering_options_tohub = {
@@ -139,17 +139,37 @@ locals {
     }
   }
 
-  virtual_network_config_by_location = merge([
-    for env, locations in var.environments : {
-      for location_key, location_value in locations : "${env}-${location_key}" => {
-        virtual_network_address_space = location_value.address_space
-        location                      = location_key
-        subnet_cidr_blocks = {
-          for subnet_name, subnet_config in var.virtual_network_subnets : subnet_name => subnet_config.cidr_block
-        }
+  # Flatten subnets so each subnet records the address_space_key it belongs to
+  # (defaults to the first address_space key of its env/location).
+  subnets_resolved = {
+    for env, locations in var.environments : env => {
+      for location_key, location_value in locations : location_key => {
+        for subnet_key, subnet_config in lookup(var.virtual_network_subnets, env, {}) : subnet_key => merge(subnet_config, {
+          address_space_key = coalesce(subnet_config.address_space_key, keys(location_value.address_space)[0])
+        })
       }
     }
-  ]...)
+  }
+
+  # One ip_calc instance per (env, location, address_space_key) so each VNet
+  # address space gets its own carved-up prefix map.
+  virtual_network_config_by_location = merge(flatten([
+    for env, locations in var.environments : [
+      for location_key, location_value in locations : [
+        for as_key, as_cidr in location_value.address_space : {
+          "${env}-${location_key}-${as_key}" = {
+            virtual_network_address_space = as_cidr
+            location                      = location_key
+            subnet_cidr_blocks = {
+              for subnet_key, subnet_config in local.subnets_resolved[env][location_key] :
+              subnet_key => subnet_config.cidr_block
+              if subnet_config.address_space_key == as_key
+            }
+          }
+        }
+      ]
+    ]
+  ])...)
 
   subscriptions_to_provision = {
     for env, locations in var.environments : env => {
@@ -159,7 +179,7 @@ locals {
         if startswith(k, "${env}-")
       }
       environment = env
-      locations   = var.var.primary_location
+      locations   = var.primary_location
       tags = {
         Application          = var.application_name
         ApplicationShortName = var.application_short_name
@@ -171,11 +191,11 @@ locals {
   environment_subnets = {
     for env, location in var.environments : env => {
       for location_key, location_value in location : location_key => {
-        for subnet_key, subnet_config in var.virtual_network_subnets : subnet_key => {
-          name              = "snet-${var.application_short_name}-${env}-${local.location_config[location_key].location}-${subnet_key}"
-          address_prefixes  = [module.ip_calc["${env}-${location_key}"].address_prefixes[subnet_key]]
-          service_endpoints = lookup(subnet_config, "service_endpoints", [])
-          delegations                                   = lookup(subnet_config, "delegations", [])
+        for subnet_key, subnet_config in local.subnets_resolved[env][location_key] : subnet_key => {
+          name                                          = "snet-${var.application_short_name}-${env}-${local.location_config[location_key].location}-${subnet_key}"
+          address_prefixes                              = [module.ip_calc["${env}-${location_key}-${subnet_config.address_space_key}"].address_prefixes[subnet_key]]
+          service_endpoints                             = lookup(subnet_config, "service_endpoints", [])
+          delegations                                   = coalesce(lookup(subnet_config, "delegations", []), [])
           private_endpoint_network_policies             = "Disabled"
           private_link_service_network_policies_enabled = false
           default_outbound_access_enabled               = false
@@ -215,6 +235,113 @@ locals {
       ]
     ])...)
   }
+
+  # Hub route configurations for each address space (for hub_route_update resource)
+  hub_route_configs = merge(flatten([
+    for env, locations in var.environments : [
+      for location_key, location_value in locations : [
+        for address_space_key, address_space_cidr in location_value.address_space : {
+          "${env}-${location_key}-${address_space_key}" = {
+            environment       = env
+            location          = location_key
+            address_space_key = address_space_key
+            address_prefix    = address_space_cidr
+          }
+        }
+      ]
+    ]
+  ])...)
+
+  # Flatten capacity reservations: create a map keyed by "env-location-sku" for each reservation
+  capacity_reservations_flat = merge([
+    for env, locations in var.environments : merge([
+      for location_key, location_value in locations : {
+        for sku in lookup(var.vm_sku_reservations_by_environment, env, []) : "${env}-${location_key}-${replace(lower(sku), "_", "-")}" => {
+          environment        = env
+          sku                = sku
+          sku_safe_name      = replace(lower(sku), "_", "-")
+          subscription_id    = module.lz_vending[env].subscription_id
+          resource_group_key = "${env}-${location_key}-mainrg"
+          crg_key_name       = "${env}-${location_key}"
+          location           = location_key
+          group_name         = "crg-${var.application_short_name}-${env}-${location_key}-01"
+          reservation_name   = "cr-${var.application_short_name}-${env}-${location_key}-${replace(lower(sku), "_", "-")}"
+        }
+      }
+    ]...)
+  ]...)
+
+  # Map of environments and locations that have capacity reservations
+  capacity_reservation_groups = merge([
+    for env, locations in var.environments : {
+      for location_key, location_value in locations : "${env}-${location_key}" => {
+        environment        = env
+        location_key       = location_key
+        skus               = lookup(var.vm_sku_reservations_by_environment, env, [])
+        group_name         = "crg-${var.application_short_name}-${env}-${location_key}-01"
+        location           = location_key
+        resource_group_key = "${env}-${location_key}-mainrg"
+      }
+      if length(lookup(var.vm_sku_reservations_by_environment, env, [])) > 0
+    }
+  ]...)
+
+  # Key Vaults - one per environment/location. The private endpoint is always
+  # deployed into the 'private_endpoint' subnet.
+  key_vaults = merge([
+    for env, locations in var.environments : {
+      for location_key, location_value in locations : "${env}-${location_key}" => {
+        environment           = env
+        location              = location_key
+        vnet_key              = location_key
+        resource_group_key    = "${env}-${location_key}-mainrg"
+        name                  = substr(replace("kv${var.application_short_name}${env}${location_key}01", "/[^a-zA-Z0-9]/", ""), 0, 24)
+        private_endpoint_name = "pep-kv-${var.application_short_name}-${env}-${location_key}-01"
+        subnet_name           = local.environment_subnets[env][location_key][var.private_endpoint_subnet_key].name
+      }
+    }
+  ]...)
+
+  # Key Vault built-in role definition UUIDs, resolved via the AVM
+  # avm-utl-roledefinitions utility module (module.role_definitions).
+  key_vault_role_definitions = {
+    crypto_user         = module.role_definitions.role_definition_rolename_to_name["Key Vault Crypto User"]
+    secrets_user        = module.role_definitions.role_definition_rolename_to_name["Key Vault Secrets User"]
+    certificate_user    = module.role_definitions.role_definition_rolename_to_name["Key Vault Certificate User"]
+    crypto_officer      = module.role_definitions.role_definition_rolename_to_name["Key Vault Crypto Officer"]
+    secrets_officer     = module.role_definitions.role_definition_rolename_to_name["Key Vault Secrets Officer"]
+    certificate_officer = module.role_definitions.role_definition_rolename_to_name["Key Vault Certificates Officer"]
+  }
+
+  # Key Vault role assignments per user-assigned managed identity:
+  #   plan  -> User roles    (crypto, secret, certificate)
+  #   apply -> Officer roles (crypto, secret, certificate)
+  #   app   -> User roles    (crypto, secret, certificate)
+  key_vault_umi_roles = {
+    plan  = ["crypto_user", "secrets_user", "certificate_user"]
+    apply = ["crypto_officer", "secrets_officer", "certificate_officer"]
+    app   = ["crypto_user", "secrets_user", "certificate_user"]
+  }
+
+  # Flatten to one entry per (env, location, umi_role, kv_role). The UAMI keys
+  # match the lz_vending umi_principal_ids map keys ("${env}-${location}-${role}").
+  key_vault_role_assignments = merge([
+    for kv_key, kv in local.key_vaults : {
+      for pair in flatten([
+        for umi_role, kv_roles in local.key_vault_umi_roles : [
+          for kv_role in kv_roles : {
+            umi_role = umi_role
+            kv_role  = kv_role
+          }
+        ]
+        ]) : "${kv_key}-${pair.umi_role}-${pair.kv_role}" => {
+        kv_key             = kv_key
+        environment        = kv.environment
+        umi_key            = "${kv_key}-${pair.umi_role}"
+        role_definition_id = local.key_vault_role_definitions[pair.kv_role]
+      }
+    }
+  ]...)
 
 }
 
