@@ -28,12 +28,21 @@ locals {
     }
   }
 
+  subscription_tags = {
+    for env, locations in var.environments : env => {
+      Application          = var.application_name
+      ApplicationShortName = var.application_short_name
+      Environment          = env
+    }
+  }
+
   default_resource_groups = merge(flatten([
     for env, location in var.environments : [
       for location_key, location_value in location : {
         for resource_group_key, resource_group_value in local.default_resource_groups_types : "${env}-${location_key}-${resource_group_key}" => {
           name     = "rg-${var.application_short_name}-${env}-${location_key}-${resource_group_value.type}-01"
           location = location_key
+          tags     = local.subscription_tags[env]
         }
       }
     ]
@@ -45,6 +54,7 @@ locals {
         for rg_key, rg_value in var.resource_groups_additional : "${env}-${location_key}-${rg_key}" => {
           name     = "rg-${var.application_short_name}-${env}-${location_key}-${rg_value.suffix}-01"
           location = location_key
+          tags     = local.subscription_tags[env]
         }
       }
     ]
@@ -56,15 +66,28 @@ locals {
         name                          = "rt-${var.application_short_name}-${env}-${location_key}-01"
         location                      = location_key
         resource_group_key            = "${env}-${location_key}-vnetrg"
+        tags                          = local.subscription_tags[env]
         bgp_route_propagation_enabled = false
-        routes = {
-          FirewallDefaultRoute = {
-            name                   = "${var.application_short_name}-to-firewall-${location_key}"
-            address_prefix         = "0.0.0.0/0"
-            next_hop_type          = "VirtualAppliance"
-            next_hop_in_ip_address = local.location_config[location_key].hub_network_fw_ip
-          }
-        }
+        routes = merge(
+          {
+            FirewallDefaultRoute = {
+              name                   = "${var.application_short_name}-to-firewall-${location_key}"
+              address_prefix         = "0.0.0.0/0"
+              next_hop_type          = "VirtualAppliance"
+              next_hop_in_ip_address = local.location_config[location_key].hub_network_fw_ip
+            }
+          },
+          var.subnet_level_nva_routing_enabled ? merge([
+            for subnet_location_key, subnets in local.environment_subnets[env] : {
+              for subnet_key, subnet in subnets : "SubnetRoute-${subnet_location_key}-${subnet_key}" => {
+                name                   = "${var.application_short_name}-${subnet_location_key}-${subnet_key}-to-firewall"
+                address_prefix         = subnet.address_prefixes[0]
+                next_hop_type          = "VirtualAppliance"
+                next_hop_in_ip_address = local.location_config[location_key].hub_network_fw_ip
+              }
+            }
+          ]...) : {}
+        )
       }
     }
   }
@@ -76,6 +99,7 @@ locals {
           name               = "nsg-${var.application_short_name}-${env}-${location_key}-${subnet_key}"
           location           = location_key
           resource_group_key = "${env}-${location_key}-vnetrg"
+          tags               = local.subscription_tags[env]
           security_rules = {
             allow_outbound = {
               name                         = "allow-${location_key}-${subnet_key}-spoke-outbound"
@@ -117,6 +141,7 @@ locals {
         ddos_protection_enabled = false
         ddos_protection_plan_id = null
         resource_group_key      = "${env}-${location_key}-vnetrg"
+        tags                    = local.subscription_tags[env]
         hub_peering_enabled     = var.hub_peering_enabled
         hub_network_resource_id = local.location_config[location_key].hub_network_resource_id
         hub_peering_direction   = "both"
@@ -180,11 +205,7 @@ locals {
       }
       environment = env
       locations   = var.primary_location
-      tags = {
-        Application          = var.application_name
-        ApplicationShortName = var.application_short_name
-        Environment          = env
-      }
+      tags        = local.subscription_tags[env]
     }
   }
 
@@ -210,10 +231,89 @@ locals {
     }
   }
 
+  # Resolve names against the AVM catalog rather than copying GUIDs from snippets.
+  uaa_delegable_role_names = toset([
+    "Key Vault Administrator",
+    "Key Vault Reader",
+    "Key Vault Certificates Officer",
+    "Key Vault Certificate User",
+    "Key Vault Crypto Officer",
+    "Key Vault Crypto User",
+    "Key Vault Crypto Service Encryption User",
+    "Key Vault Crypto Service Release User",
+    "Key Vault Secrets Officer",
+    "Key Vault Secrets User",
+    "Storage Blob Data Owner",
+    "Storage Blob Data Contributor",
+    "Storage Blob Data Reader",
+    "Storage Blob Delegator",
+    "Storage Queue Data Contributor",
+    "Storage Queue Data Reader",
+    "Storage Queue Data Message Processor",
+    "Storage Queue Data Message Sender",
+    "Storage Table Data Contributor",
+    "Storage Table Data Reader",
+    "Storage File Data Privileged Contributor",
+    "Storage File Data Privileged Reader",
+    "Storage File Data SMB Admin",
+    "Storage File Data SMB Share Contributor",
+    "Storage File Data SMB Share Elevated Contributor",
+    "Storage File Data SMB Share Reader",
+    "Cosmos DB Account Reader Role",
+    "Azure Service Bus Data Owner",
+    "Azure Service Bus Data Receiver",
+    "Azure Service Bus Data Sender",
+  ])
+
+  uaa_delegable_role_ids = {
+    for name in local.uaa_delegable_role_names :
+    name => module.role_definitions.role_definition_rolename_to_name[name]
+  }
+
+  uaa_delegation_condition = join(" AND ", [
+    "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${join(", ", values(local.uaa_delegable_role_ids))}}))",
+    "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${join(", ", values(local.uaa_delegable_role_ids))}}))",
+  ])
+
   umi_roles = {
-    app   = {}
-    plan  = {}
-    apply = {}
+    app = {
+      role_assignments = {
+        subscription_reader = {
+          definition                = "Reader"
+          relative_scope            = ""
+          principal_type            = "ServicePrincipal"
+          definition_lookup_enabled = true
+        }
+      }
+    }
+    plan = {
+      role_assignments = {
+        subscription_reader = {
+          definition                = "Reader"
+          relative_scope            = ""
+          principal_type            = "ServicePrincipal"
+          definition_lookup_enabled = true
+        }
+      }
+    }
+    apply = {
+      role_assignments = {
+        subscription_uaa_conditional = {
+          definition                = "User Access Administrator"
+          relative_scope            = ""
+          principal_type            = "ServicePrincipal"
+          condition                 = local.uaa_delegation_condition
+          condition_version         = "2.0"
+          definition_lookup_enabled = true
+        }
+        subscription_contributor = {
+          definition                = "Custom Workload Contributor"
+          relative_scope            = ""
+          principal_type            = "ServicePrincipal"
+          definition_lookup_enabled = true
+        }
+      }
+    }
   }
 
   default_user_managed_identities = {
@@ -224,12 +324,8 @@ locals {
             name               = "umi-${var.application_short_name}-${env}-${location_key}-${role_key}-01"
             location           = location_key
             resource_group_key = "${env}-${location_key}-mainrg"
-            tags = {
-              Application          = var.application_name
-              ApplicationShortName = var.application_short_name
-              Environment          = env
-              Role                 = role_key
-            }
+            role_assignments   = role_value.role_assignments
+            tags               = merge(local.subscription_tags[env], { Role = role_key })
           }
         }
       ]
