@@ -8,6 +8,34 @@ variable "application_short_name" {
   type        = string
 }
 
+variable "department_name" {
+  description = "Friendly name of the department responsible for the workload."
+  type        = string
+  default     = "Update Required"
+  nullable    = false
+}
+
+variable "department_billing_id" {
+  description = "Billing identifier of the department responsible for the workload."
+  type        = string
+  default     = "Update Required"
+  nullable    = false
+}
+
+variable "service_agreement_name" {
+  description = "Name of the service agreement covering the workload."
+  type        = string
+  default     = "Update Required"
+  nullable    = false
+}
+
+variable "service_number" {
+  description = "Service request or ticket number that requested the workload build."
+  type        = string
+  default     = "Update Required"
+  nullable    = false
+}
+
 variable "environments" {
   description = "List of environments."
   type = map(map(object({
@@ -77,10 +105,10 @@ variable "subscription_resource_providers" {
   description = "The resource providers and their features for the subscription. Map of provider names to a set of features to enable."
   type        = map(set(string))
   default = {
-    "Microsoft.Network"       = []
-    "Microsoft.Compute"       = []
-    "Microsoft.Storage"       = []
-    "Microsoft.KeyVault"      = []
+    "Microsoft.Network"        = []
+    "Microsoft.Compute"        = []
+    "Microsoft.Storage"        = []
+    "Microsoft.KeyVault"       = []
     "Microsoft.PolicyInsights" = []
   }
 }

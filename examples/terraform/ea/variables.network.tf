@@ -15,6 +15,18 @@ variable "hub_peering_enabled" {
   default     = true
 }
 
+variable "subnet_level_nva_routing_enabled" {
+  description = "Add a route for every subnet in an environment to each of that environment's route tables, using the route table location's hub NVA as the next hop. Requires virtual networks and hub peering."
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.subnet_level_nva_routing_enabled || (var.virtual_network_enabled && var.hub_peering_enabled)
+    error_message = "Subnet-level NVA routing requires virtual_network_enabled and hub_peering_enabled to both be true."
+  }
+}
+
 variable "private_endpoint_subnet_key" {
   description = "The key of the subnet to use for private endpoints. This key must exist in the `virtual_network_subnets` variable."
   type        = string
