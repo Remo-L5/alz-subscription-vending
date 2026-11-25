@@ -51,10 +51,6 @@ variables {
   billing_account_id           = "example-account"
   billing_profile_id           = "example-profile"
   connectivity_subscription_id = "00000000-0000-0000-0000-000000000001"
-  department_name              = "Example department"
-  department_billing_id        = "DEPT-001"
-  service_agreement_name       = "Example agreement"
-  service_number               = "REQ-001"
   private_endpoint_subnet_key  = "private_endpoint"
   hub_peering_enabled          = false
   capacity_reservation_enabled = true
@@ -89,13 +85,9 @@ run "propagate_tags_and_identity_roles" {
         Application          = var.application_name
         ApplicationShortName = var.application_short_name
         Environment          = env
-        DepartmentName       = var.department_name
-        DepartmentBillingId  = var.department_billing_id
-        ServiceAgreementName = var.service_agreement_name
-        ServiceNumber        = var.service_number
       }
     ])
-    error_message = "Each subscription must receive the supplied application, environment, department, and service tags."
+    error_message = "Each subscription must receive only the existing application and environment tags."
   }
 
   assert {

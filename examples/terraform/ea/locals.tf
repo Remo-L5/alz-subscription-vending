@@ -33,10 +33,6 @@ locals {
       Application          = var.application_name
       ApplicationShortName = var.application_short_name
       Environment          = env
-      DepartmentName       = var.department_name
-      DepartmentBillingId  = var.department_billing_id
-      ServiceAgreementName = var.service_agreement_name
-      ServiceNumber        = var.service_number
     }
   }
 

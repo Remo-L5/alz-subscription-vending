@@ -8,19 +8,10 @@ virtual networks, managed identities, capacity reservation groups/reservations,
 Key Vaults, and private endpoints. Child resources without tag support (such as
 subnets, routes, peerings, and role assignments) are not tagged.
 
-The existing `Application`, `ApplicationShortName`, and `Environment` tags are
-joined by:
-
-| Input | Tag |
-| --- | --- |
-| `department_name` | `DepartmentName` |
-| `department_billing_id` | `DepartmentBillingId` |
-| `service_agreement_name` | `ServiceAgreementName` |
-| `service_number` | `ServiceNumber` |
-
-These four inputs default to `Update Required`; supply the actual values before
-deployment. Identities retain their additional `Role` tag. Azure Policy remains
-responsible for inheritance/remediation on resources created outside vending.
+The shared map contains only the existing `Application`, `ApplicationShortName`,
+and `Environment` tags. Identities retain their additional `Role` tag. No
+customer-specific tag inputs are introduced. Azure Policy remains responsible
+for inheritance/remediation on resources created outside vending.
 
 The vending AVM owns the following assignments at each provisioned subscription:
 
